@@ -25,6 +25,8 @@ if TYPE_CHECKING:
 from abc import ABC, abstractmethod
 from .base_classes import TrainableThreatModel
 
+import numpy as np
+
 
 class AttackerKnowledgeOnData:
     """
@@ -188,8 +190,12 @@ class AuxiliaryDataKnowledge(AttackerKnowledgeOnData):
         # sample datasets from the real dataset.
         dataset = self.aux_data if training else self.test_data
 
-        # Split the data into subsets.
-        return dataset.create_subsets(num_samples, self.num_training_records)
+        if training:
+            # Split the data into subsets.
+            return [dataset for i in range(num_samples)]
+            #return [dataset for i in range(2)]
+        else:
+            return dataset.create_subsets(num_samples, self.num_training_records)
 
     @property
     def label(self):
@@ -263,8 +269,29 @@ class BlackBoxKnowledge(AttackerKnowledgeOnGenerator):
         self.generator = generator
         self.num_synthetic_records = num_synthetic_records
 
-    def generate(self, training_dataset: Dataset, training_mode: bool = True):
-        return self.generator(training_dataset, self.num_synthetic_records)
+    def generate(self, training_dataset: Dataset, training_mode: bool = True, gen_labels: list = []):
+        
+        if training_mode:
+            self.generator.fit(training_dataset[0])
+            print("first generator fit")
+            gen_datasets = list(np.empty((len(gen_labels), )))
+            target_yes_index = [1 if label == gen_labels[0] else 0 for label in gen_labels]
+            for i in range(len(gen_labels)):
+                if target_yes_index[i] == 1:
+                    gen_datasets[i] = self.generator.generate(self.num_synthetic_records)
+            
+            self.generator.fit(training_dataset[1])
+            print("second generator fit")
+            target_no_index = [1 if label == gen_labels[1] else 0 for label in gen_labels]
+            # gen_datasets[target_no_index] = [self.generator.generate(self.num_synthetic_records) 
+            #                                     for i in target_no_index if i == 1]
+            for j in range(len(gen_labels)):
+                if target_no_index[j] == 1:
+                    gen_datasets[j] = self.generator.generate(self.num_synthetic_records)
+        else:
+            gen_datasets = self.generator(training_dataset, self.num_synthetic_records)
+
+        return gen_datasets
 
     @property
     def label(self):
@@ -465,11 +492,17 @@ class LabelInferenceThreatModel(TrainableThreatModel):
             ) = self.atk_know_data.generate_datasets_with_label(
                 num_samples, training=training
             )
+            print("training datasets with labels produced")
             # Then, generate synthetic data from each original dataset.
-            gen_datasets = [
-                self.atk_know_gen.generate(ds, training_mode=training)
-                for ds in self.iterator_tracker(training_datasets)
-            ]
+            if training:
+                gen_datasets = self.atk_know_gen.generate(training_datasets, training, gen_labels)
+
+            else:
+                gen_datasets = [
+                    self.atk_know_gen.generate(ds, training_mode=training)
+                    for ds in self.iterator_tracker(training_datasets)
+                ]
+            print("(list of) synthetic datasets generated")
             # Add the entries generated to the memory.
             if use_memory:
                 self._memory[training] = (
