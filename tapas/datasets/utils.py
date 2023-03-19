@@ -73,6 +73,8 @@ def encode_data(dataset, infer_ranges=False): # TODO: Write tests
         if d_type == 'finite':
             if isinstance(d_repr, int):
                 col_cats = list(range(d_repr))
+            # elif all(isinstance(repr, int) for repr in d_repr):
+            #     col_cats = list(range(len(d_repr)))
             else:
                 col_cats = d_repr
 
